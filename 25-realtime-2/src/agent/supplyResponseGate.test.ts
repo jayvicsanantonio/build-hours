@@ -39,4 +39,16 @@ describe('Supply response gate', () => {
     expect(gate.markResponseDone()).toEqual({ shouldCreateResponse: true, reason: 'tool' });
     expect(gate.markResponseDone()).toEqual({ shouldCreateResponse: false });
   });
+
+  it('waits for all pending tool outputs when response.done arrives first', () => {
+    const gate = createSupplyResponseGate();
+
+    gate.markResponseCreated();
+    gate.markToolCallStarted('call_1');
+    gate.markToolCallStarted('call_2');
+
+    expect(gate.markResponseDone()).toEqual({ shouldCreateResponse: false });
+    expect(gate.requestResponseForToolOutput('call_1')).toBe(false);
+    expect(gate.requestResponseForToolOutput('call_2')).toBe(true);
+  });
 });

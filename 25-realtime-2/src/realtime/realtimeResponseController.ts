@@ -26,12 +26,17 @@ export function createRealtimeResponseController(): RealtimeResponseController {
   let waitingForTranscript = false;
   let responseRequested = false;
   let responseActive = false;
-  let toolCallActive = false;
+  const activeToolCallIds = new Set<string>();
+  let anonymousToolCallCount = 0;
   let continuationPending = false;
   let queuedTurnText: string | null = null;
 
+  function hasActiveToolCalls() {
+    return activeToolCallIds.size > 0 || anonymousToolCallCount > 0;
+  }
+
   function canCreateResponse() {
-    return !responseRequested && !responseActive && !toolCallActive;
+    return !responseRequested && !responseActive && !hasActiveToolCalls();
   }
 
   function requestResponse(reason: RealtimeResponseRequestReason, text?: string): RealtimeResponseRequest {
@@ -49,7 +54,7 @@ export function createRealtimeResponseController(): RealtimeResponseController {
   }
 
   function drainPendingResponse(): RealtimeResponseRequest {
-    if (toolCallActive) return noResponse;
+    if (hasActiveToolCalls()) return noResponse;
     if (responseRequested || responseActive) return noResponse;
 
     if (continuationPending) {
@@ -103,11 +108,19 @@ export function createRealtimeResponseController(): RealtimeResponseController {
       responseActive = false;
       return drainPendingResponse();
     },
-    beginToolCall() {
-      toolCallActive = true;
+    beginToolCall(callId?: string) {
+      if (callId) {
+        activeToolCallIds.add(callId);
+      } else {
+        anonymousToolCallCount += 1;
+      }
     },
-    completeToolCall() {
-      toolCallActive = false;
+    completeToolCall(callId?: string) {
+      if (callId) {
+        activeToolCallIds.delete(callId);
+      } else {
+        anonymousToolCallCount = Math.max(0, anonymousToolCallCount - 1);
+      }
       return drainPendingResponse();
     },
     requestToolContinuation() {
@@ -123,7 +136,8 @@ export function createRealtimeResponseController(): RealtimeResponseController {
       waitingForTranscript = false;
       responseRequested = false;
       responseActive = false;
-      toolCallActive = false;
+      activeToolCallIds.clear();
+      anonymousToolCallCount = 0;
       continuationPending = false;
       queuedTurnText = null;
     },

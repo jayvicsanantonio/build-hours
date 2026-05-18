@@ -421,4 +421,7 @@ function supplyRealtimeApiPlugin(): PluginOption {
 
 export default defineConfig({
   plugins: [react(), supplyRealtimeApiPlugin()],
+  preview: {
+    allowedHosts: ['voice-shopping-metricloop.app.openai.org'],
+  },
 });

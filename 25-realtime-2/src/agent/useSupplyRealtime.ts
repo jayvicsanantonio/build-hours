@@ -16,6 +16,10 @@ import {
   SUPPLY_REALTIME_MODEL,
   SUPPLY_REALTIME_REASONING,
 } from './supplyRealtimeConfig';
+import {
+  installSupplyRealtimeDebugHelpers,
+  logSupplyRealtimeEvent,
+} from './supplyRealtimeDebugLog';
 import { createSupplyResponseGate } from './supplyResponseGate';
 import type {
   AddToCartRequest,
@@ -72,6 +76,7 @@ interface ServerEvent {
     };
   };
   response?: {
+    id?: string;
     usage?: {
       total_tokens?: number;
       input_tokens?: number;
@@ -292,9 +297,17 @@ export function useSupplyRealtime() {
     agentRef.current = agent;
   }, [agent]);
 
+  useEffect(() => {
+    installSupplyRealtimeDebugHelpers();
+  }, []);
+
   const sendClientEvent = useCallback((event: unknown) => {
     const dataChannel = dataChannelRef.current;
-    if (!dataChannel || dataChannel.readyState !== 'open') return false;
+    if (!dataChannel || dataChannel.readyState !== 'open') {
+      logSupplyRealtimeEvent('client', event, { gateDecision: 'not_sent', reason: 'data_channel_not_open' });
+      return false;
+    }
+    logSupplyRealtimeEvent('client', event, { gateDecision: 'sent' });
     dataChannel.send(JSON.stringify(event));
     return true;
   }, []);
@@ -302,18 +315,27 @@ export function useSupplyRealtime() {
   const sendResponseCreate = useCallback(() => {
     const sent = sendClientEvent({ type: 'response.create' });
     if (!sent) {
+      logSupplyRealtimeEvent('internal', { type: 'supply.response_create_failed' });
       responseGateRef.current.markResponseRequestFailed();
     }
     return sent;
   }, [sendClientEvent]);
 
-  const requestResponseForToolOutput = useCallback(() => {
-    if (!responseGateRef.current.requestResponseForToolOutput()) return false;
+  const requestResponseForToolOutput = useCallback((callId?: string) => {
+    if (!responseGateRef.current.requestResponseForToolOutput(callId)) {
+      logSupplyRealtimeEvent('internal', { type: 'supply.tool_continuation_deferred', call_id: callId });
+      return false;
+    }
+    logSupplyRealtimeEvent('internal', { type: 'supply.tool_continuation_allowed', call_id: callId });
     return sendResponseCreate();
   }, [sendResponseCreate]);
 
   const requestResponseForUserTurn = useCallback(() => {
-    if (!responseGateRef.current.requestResponseForUserTurn()) return false;
+    if (!responseGateRef.current.requestResponseForUserTurn()) {
+      logSupplyRealtimeEvent('internal', { type: 'supply.user_turn_deferred' });
+      return false;
+    }
+    logSupplyRealtimeEvent('internal', { type: 'supply.user_turn_allowed' });
     return sendResponseCreate();
   }, [sendResponseCreate]);
 
@@ -538,7 +560,13 @@ export function useSupplyRealtime() {
 
   const runFunctionCall = useCallback(
     async (itemId: string, call: PendingFunctionCall) => {
-      responseGateRef.current.markToolCallStarted();
+      logSupplyRealtimeEvent('internal', {
+        type: 'supply.tool_started',
+        item_id: itemId,
+        call_id: call.callId,
+        name: call.name,
+      });
+      responseGateRef.current.markToolCallStarted(call.callId);
       removePrematureAssistantMessagesForToolTurn();
       const isAddToCartCall = call.name === 'add_to_cart';
       const relevantAssistantText = `${assistantTextBeforeCurrentTurnRef.current} ${lastAssistantTextRef.current}`;
@@ -626,7 +654,14 @@ export function useSupplyRealtime() {
             output: JSON.stringify(output),
           },
         });
-        requestResponseForToolOutput();
+        logSupplyRealtimeEvent('internal', {
+          type: 'supply.tool_output_sent',
+          item_id: itemId,
+          call_id: call.callId,
+          name: call.name,
+          outputLength: JSON.stringify(output).length,
+        });
+        requestResponseForToolOutput(call.callId);
         if (shouldShowToolActivity) {
           updateToolActivity(itemId, {
             status: 'done',
@@ -643,12 +678,20 @@ export function useSupplyRealtime() {
             output: JSON.stringify(output),
           },
         });
-        requestResponseForToolOutput();
+        logSupplyRealtimeEvent('internal', {
+          type: 'supply.tool_output_sent',
+          item_id: itemId,
+          call_id: call.callId,
+          name: call.name,
+          outputLength: JSON.stringify(output).length,
+          reason: 'tool_failed',
+        });
+        requestResponseForToolOutput(call.callId);
         if (shouldShowToolActivity) {
           updateToolActivity(itemId, { status: 'failed' });
         }
       } finally {
-        responseGateRef.current.markToolCallFinished();
+        responseGateRef.current.markToolCallFinished(call.callId);
       }
     },
     [
@@ -662,6 +705,8 @@ export function useSupplyRealtime() {
 
   const handleServerEvent = useCallback(
     (event: ServerEvent) => {
+      logSupplyRealtimeEvent('server', event);
+
       if (event.type === 'session.updated') {
         setStatus('listening');
         return;
@@ -780,6 +825,12 @@ export function useSupplyRealtime() {
           usage: event.response?.usage,
         });
         const pendingResponse = responseGateRef.current.markResponseDone();
+        logSupplyRealtimeEvent('internal', {
+          type: 'supply.response_done_gate',
+          response_id: event.response?.id,
+          reason: pendingResponse.reason,
+          gateDecision: pendingResponse.shouldCreateResponse ? 'create_response' : 'no_response',
+        });
         if (pendingResponse.shouldCreateResponse) {
           const sent = sendResponseCreate();
           setStatus(sent ? 'speaking' : 'listening');
