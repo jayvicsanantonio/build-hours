@@ -11,9 +11,9 @@ export interface SupplyResponseGate {
   markResponseCreated(): void;
   markResponseRequestFailed(): void;
   markResponseDone(): SupplyResponseGateDrain;
-  markToolCallStarted(): void;
-  markToolCallFinished(): void;
-  requestResponseForToolOutput(): boolean;
+  markToolCallStarted(callId?: string): void;
+  markToolCallFinished(callId?: string): void;
+  requestResponseForToolOutput(callId?: string): boolean;
   requestResponseForUserTurn(): boolean;
   reset(): void;
 }
@@ -28,7 +28,6 @@ function toSupplyDrain(request: RealtimeResponseRequest): SupplyResponseGateDrai
 
 export function createSupplyResponseGate(): SupplyResponseGate {
   const controller = createRealtimeResponseController();
-  let toolCallActive = false;
 
   return {
     markResponseCreated() {
@@ -40,27 +39,21 @@ export function createSupplyResponseGate(): SupplyResponseGate {
     markResponseDone() {
       return toSupplyDrain(controller.markResponseDone());
     },
-    markToolCallStarted() {
-      toolCallActive = true;
-      controller.beginToolCall();
+    markToolCallStarted(callId?: string) {
+      controller.beginToolCall(callId);
     },
-    markToolCallFinished() {
-      if (!toolCallActive) return;
-      toolCallActive = false;
-      controller.completeToolCall();
+    markToolCallFinished(callId?: string) {
+      controller.completeToolCall(callId);
     },
-    requestResponseForToolOutput() {
-      if (toolCallActive) {
-        toolCallActive = false;
-        controller.completeToolCall();
-      }
+    requestResponseForToolOutput(callId?: string) {
+      const completedTool = controller.completeToolCall(callId);
+      if (completedTool.shouldCreateResponse) return true;
       return controller.requestToolContinuation().shouldCreateResponse;
     },
     requestResponseForUserTurn() {
       return controller.requestTextTurn('supply typed turn').shouldCreateResponse;
     },
     reset() {
-      toolCallActive = false;
       controller.reset();
     },
   };

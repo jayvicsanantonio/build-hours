@@ -32,6 +32,12 @@ describe('Supply realtime prompt contract', () => {
     expect(SUPPLY_REALTIME_INSTRUCTIONS).toContain('avoid repeating the full product title');
   });
 
+  it('requires direct requirement language instead of hedged shopping guidance', () => {
+    expect(SUPPLY_REALTIME_INSTRUCTIONS).toContain('Use direct shopping guidance for requirements');
+    expect(SUPPLY_REALTIME_INSTRUCTIONS).toContain('Say "You need a tent"');
+    expect(SUPPLY_REALTIME_INSTRUCTIONS.toLowerCase()).not.toMatch(/\busually\b|\btypically\b|\bgenerally\b|\bnormally\b|\bin most cases\b/);
+  });
+
   it('exposes weather web search for trip-risk follow-ups', () => {
     expect(SUPPLY_REALTIME_TOOLS.map((tool) => tool.name)).toContain('search_weather_web');
     expect(SUPPLY_REALTIME_INSTRUCTIONS).toContain('search_weather_web');

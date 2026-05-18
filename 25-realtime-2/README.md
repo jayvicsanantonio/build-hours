@@ -513,6 +513,15 @@ ENABLE_REALTIME_COST_TRACES=1
 
 Keep generated traces local. Do not commit them.
 
+Supply Co. also keeps a compact in-browser Realtime lifecycle log for debugging response timing issues. In the browser console:
+
+```js
+window.__supplyRealtimeDebug.get()
+window.__supplyRealtimeDebug.clear()
+```
+
+The log is stored in `localStorage` under `supply-realtime-debug-log-v1` and records event metadata such as response ids, item ids, call ids, tool names, gate decisions, and error messages. It intentionally omits raw transcripts and tool output payloads.
+
 ## Assets
 
 Supply Co. and MetricLoop are fictional demo brands. Runtime product imagery under `public/demo-assets/generated` is synthetic demo imagery; no third-party brand assets are intentionally included.

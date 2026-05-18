@@ -66,6 +66,23 @@ describe('createRealtimeResponseController', () => {
     });
   });
 
+  it('waits for every pending tool output before continuing after response.done', () => {
+    const controller = createRealtimeResponseController();
+
+    expect(controller.requestTextTurn('Find tents')).toMatchObject({ shouldCreateResponse: true });
+    controller.markResponseCreated('resp_1');
+    controller.beginToolCall('call_1');
+    controller.beginToolCall('call_2');
+
+    expect(controller.markResponseDone('resp_1')).toEqual({ shouldCreateResponse: false });
+    expect(controller.requestToolContinuation()).toEqual({ shouldCreateResponse: false });
+    expect(controller.completeToolCall('call_1')).toEqual({ shouldCreateResponse: false });
+    expect(controller.completeToolCall('call_2')).toEqual({
+      shouldCreateResponse: true,
+      reason: 'tool',
+    });
+  });
+
   it('queues typed turns while a response is active', () => {
     const controller = createRealtimeResponseController();
 
